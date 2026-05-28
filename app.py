@@ -1,33 +1,24 @@
 #!/usr/bin/env python
 import asyncio
 import asyncpg
-import os
 import logging
 from dotenv import load_dotenv
-from config import NOTIFICATION_DAYS
+from config import NOTIFICATION_DAYS, DB_CONFIG
 
 load_dotenv()
-
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
-
-DB_CONFIG = {
-    "user": os.getenv("DB_USER"),
-    "password": os.getenv("DB_PASSWORD"),
-    "database": os.getenv("DB_DATABASE"),
-    "host": os.getenv("DB_HOST"),
-    "port": int(os.getenv("DB_PORT", 5432)),
-}
 
 async def get_conn():
     return await asyncpg.connect(**DB_CONFIG)
 
 async def check_subscriptions():
     conn = await get_conn()
+    print('conn >>>', conn)
     try:
         for days in NOTIFICATION_DAYS:
             rows = await conn.fetch("""
-                SELECT 
+                SELECT
                     u.telegram_user_id,
                     u.email,
                     vc.payment_id,
@@ -37,22 +28,21 @@ async def check_subscriptions():
                 FROM users u
                 JOIN payments p ON p.user_id = u.id
                 JOIN vpn_configs vc ON vc.payment_id = p.payment_id
-                WHERE vc.session_end = CURRENT_DATE + make_interval(days => $1)
+                WHERE vc.session_end::date = CURRENT_DATE + $1
                 AND NOT EXISTS (
-                    SELECT 1 FROM notifications_queue nq 
-                    WHERE nq.payment_id = vc.payment_id 
+                    SELECT 1 FROM notifications_queue nq
+                    WHERE nq.payment_id = vc.payment_id
                     AND nq.wg_easy_name = vc.wg_easy_name
                     AND nq.sent = FALSE
                 )
             """, days)
-            
             if rows:
                 await conn.executemany("""
-                    INSERT INTO notifications_queue 
+                    INSERT INTO notifications_queue
                     (telegram_user_id, email, payment_id, wg_easy_name, number_orders_count, expires_at)
                     VALUES ($1, $2, $3, $4, $5, $6)
                 """, [
-                    (row['telegram_user_id'], row['email'], 
+                    (row['telegram_user_id'], row['email'],
                      row['payment_id'], row['wg_easy_name'], row['number_orders_count'], row['expires_at'])
                     for row in rows
                 ])
