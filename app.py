@@ -28,12 +28,13 @@ async def check_subscriptions():
                 FROM users u
                 JOIN payments p ON p.user_id = u.id
                 JOIN vpn_configs vc ON vc.payment_id = p.payment_id
-                WHERE vc.session_end::date = CURRENT_DATE + $1::int
-                AND NOT EXISTS (
-                    SELECT 1 FROM notifications_queue nq
-                    WHERE nq.payment_id = vc.payment_id
-                    AND nq.wg_easy_name = vc.wg_easy_name
-                    AND nq.sent = FALSE
+                WHERE vc.session_end >= (CURRENT_DATE + $1::int)::timestamp
+                    AND vc.session_end <  (CURRENT_DATE + ($1::int + 1))::timestamp
+                    AND NOT EXISTS (
+                        SELECT 1 FROM notifications_queue nq
+                        WHERE nq.payment_id = vc.payment_id
+                        AND nq.wg_easy_name = vc.wg_easy_name
+                        AND nq.sent = FALSE
                 )
             """, days)
             if rows:
