@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from config import NOTIFICATION_DAYS, DB_CONFIG
 
 load_dotenv()
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
@@ -22,9 +23,9 @@ async def check_subscriptions():
                     u.telegram_user_id,
                     u.email,
                     vc.payment_id,
-                    vc.wg_easy_name,
+                    MIN(vc.wg_easy_name) AS wg_easy_name,
                     p.number_orders_count,
-                    vc.session_end AS expires_at
+                    MIN(vc.session_end) AS expires_at
                 FROM users u
                 JOIN payments p ON p.user_id = u.id
                 JOIN vpn_configs vc ON vc.payment_id = p.payment_id
@@ -33,9 +34,9 @@ async def check_subscriptions():
                     AND NOT EXISTS (
                         SELECT 1 FROM notifications_queue nq
                         WHERE nq.payment_id = vc.payment_id
-                        AND nq.wg_easy_name = vc.wg_easy_name
                         AND nq.sent = FALSE
-                )
+                    )
+                GROUP BY u.telegram_user_id, u.email, vc.payment_id, p.number_orders_count
             """, days)
             if rows:
                 await conn.executemany("""
